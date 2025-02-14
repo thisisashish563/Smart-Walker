@@ -1,0 +1,87 @@
+#include <SoftwareSerial.h>
+
+SoftwareSerial gpsSerial(10, 11);  // GPS Module (RX, TX)
+SoftwareSerial gsmSerial(7, 8);    // GSM SIM800L Module (RX, TX)
+#define BUZZER 6  // Buzzer connected to pin 6
+
+void setup() {
+    Serial.begin(9600);
+    gpsSerial.begin(9600);
+    gsmSerial.begin(9600);
+    
+    pinMode(BUZZER, OUTPUT);
+    digitalWrite(BUZZER, LOW);
+
+    Serial.println("Initializing GSM Module...");
+    gsmSerial.println("AT");
+    delay(1000);
+    
+    if (gsmSerial.available()) {
+        String response = gsmSerial.readString();
+        if (response.indexOf("OK") != -1) {
+            Serial.println("GSM Module Ready.");
+        } else {
+            Serial.println("GSM Module Error!");
+            digitalWrite(BUZZER, HIGH);
+            delay(2000);
+            digitalWrite(BUZZER, LOW);
+        }
+    }
+}
+
+bool sendSMS(String message) {
+    for (int i = 0; i < 3; i++) {  // Retry up to 3 times
+        gsmSerial.println("AT+CMGF=1");
+        delay(1000);
+        gsmSerial.println("AT+CMGS=\"+91XXXXXXXXXX\""); // Replace with recipient number
+        delay(1000);
+        gsmSerial.println(message);
+        delay(1000);
+        gsmSerial.write(26);
+        delay(3000);
+
+        if (gsmSerial.available()) {
+            String response = gsmSerial.readString();
+            if (response.indexOf("OK") != -1) {
+                Serial.println("SMS Sent Successfully!");
+                return true;
+            }
+        }
+        Serial.println("SMS Send Failed. Retrying...");
+    }
+    return false;
+}
+
+String extractGPSData() {
+    while (gpsSerial.available()) {
+        String gpsData = gpsSerial.readStringUntil('\n');
+        Serial.println("GPS Raw Data: " + gpsData);
+        
+        if (gpsData.startsWith("$GPGGA")) {  // Validate GPS data
+            int commaIndex = gpsData.indexOf(',', 6);
+            if (commaIndex != -1) {
+                return "Alert! Location Data: " + gpsData.substring(commaIndex + 1, commaIndex + 15);
+            }
+        }
+    }
+    return "GPS Error!";
+}
+
+void loop() {
+    String gpsMessage = extractGPSData();
+    
+    if (gpsMessage == "GPS Error!") {
+        Serial.println("GPS Error. Buzzer Alert!");
+        digitalWrite(BUZZER, HIGH);
+        delay(3000);
+        digitalWrite(BUZZER, LOW);
+    } else {
+        if (!sendSMS(gpsMessage)) {
+            Serial.println("Failed to Send SMS. Activating Buzzer!");
+            digitalWrite(BUZZER, HIGH);
+            delay(5000);
+            digitalWrite(BUZZER, LOW);
+        }
+    }
+    delay(10000);  // Wait before checking again
+}
