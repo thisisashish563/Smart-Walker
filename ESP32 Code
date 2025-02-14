@@ -1,0 +1,74 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+#define DHTPIN 4
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+#define TRIG_PIN 5    
+#define ECHO_PIN 18   
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+void setup() {
+    Serial.begin(115200);
+    dht.begin();
+    
+    if (!lcd.begin(16, 2)) {
+        Serial.println("LCD initialization failed!");
+    } else {
+        lcd.backlight();
+        lcd.clear();
+        lcd.print("System Start");
+    }
+    
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    delay(2000);
+}
+
+float getFilteredDistance() {
+    float readings[3] = {0};
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(TRIG_PIN, LOW);
+        delayMicroseconds(2);
+        digitalWrite(TRIG_PIN, HIGH);
+        delayMicroseconds(10);
+        digitalWrite(TRIG_PIN, LOW);
+        float duration = pulseIn(ECHO_PIN, HIGH, 25000);
+        readings[i] = duration * 0.034 / 2;
+        delay(10);
+    }
+    return (readings[0] + readings[1] + readings[2]) / 3; // Averaging filter
+}
+
+void loop() {
+    float temp = dht.readTemperature();
+    float humidity = dht.readHumidity();
+    
+    if (isnan(temp) || isnan(humidity)) {
+        Serial.println("DHT11 Sensor Error!");
+        temp = humidity = -1; // Indicate error
+    }
+
+    float distance = getFilteredDistance();
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("T:");
+    lcd.print(temp == -1 ? "Err" : String(temp) + "C");
+    
+    lcd.setCursor(8, 0);
+    lcd.print("H:");
+    lcd.print(humidity == -1 ? "Err" : String(humidity) + "%");
+    
+    lcd.setCursor(0, 1);
+    lcd.print("Dist: ");
+    lcd.print(distance, 1);
+    lcd.print(" cm");
+
+    Serial.printf("Temp: %.2f C, Humidity: %.2f%%, Distance: %.2f cm\n", temp, humidity, distance);
+    
+    delay(2000);
+}
